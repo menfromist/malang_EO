@@ -263,6 +263,99 @@ body {
 
 .result-actions { display: flex; flex-direction: column; gap: 12px; }
 
+/* ── 놀이터 ── */
+#screen-play .screen-header { justify-content: space-between; }
+#screen-play .screen-header h2 { flex: 1; }
+
+.btn-mini { padding: 10px 16px; font-size: 0.9rem; border-radius: 16px; }
+
+.play-body { padding: 4px 24px 0; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+
+.play-stage { text-align: center; }
+
+#play-canvas {
+  width: min(100%, 340px);
+  aspect-ratio: 1;
+  height: auto;
+  touch-action: none;
+  cursor: grab;
+  border-radius: 20px;
+  filter: drop-shadow(0 12px 20px rgba(255, 143, 171, 0.3));
+}
+
+.play-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.tab {
+  border: 3px solid transparent;
+  border-radius: 16px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+  padding: 10px 6px;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.tab.selected { border-color: var(--pink-deep); background: #fff0f4; }
+
+.tab-panel {
+  background: var(--bg-card);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hint.center { text-align: center; }
+
+.deco-row .picker-label { margin-bottom: 8px; }
+.deco-row .hint { font-weight: 400; font-size: 0.8rem; }
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  width: 44px; height: 44px;
+  border: 3px solid #f0e4ea;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-soft);
+  font-family: inherit;
+}
+.chip.selected { border-color: var(--pink-deep); box-shadow: 0 0 0 3px #ffd6e2; }
+
+.emoji-btn {
+  width: 44px; height: 44px;
+  border: 3px solid #f0e4ea;
+  border-radius: 14px;
+  background: #fff;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-soft);
+}
+.emoji-btn.selected { border-color: var(--pink-deep); background: #fff0f4; }
+.emoji-btn.clear-btn { background: #fff6e8; }
+
+.share-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.share-row .btn { padding: 14px 8px; font-size: 0.95rem; }
+
 /* ── 보관함 ── */
 .library-body { padding: 8px 24px 0; flex: 1; }
 

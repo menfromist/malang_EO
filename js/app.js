@@ -1,13 +1,11 @@
 /* ── 말랑 Mallang — 앱 로직 (화면 전환·업로드·생성·저장·보관함) ── */
 
-(() => {
-  const STORAGE_KEY = 'mallang.library.v1';
-
+const App = (() => {
   const state = {
     photo: null,          // 업로드한 원본 사진 (데이터 URL)
     style: 'mochi',       // 선택한 스타일
     resultDataUrl: null,  // 생성된 말랑이 (데이터 URL)
-    saved: false,         // 현재 결과가 저장됐는지
+    savedItemId: null,    // 결과를 저장한 보관함 아이템 id
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -16,6 +14,7 @@
   function show(name) {
     document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
     $(`#screen-${name}`).classList.add('active');
+    if (name !== 'play') Play.stop();
     if (name === 'library') renderLibrary();
     if (name === 'home') updateHomeCount();
   }
@@ -32,21 +31,8 @@
     logoBlob.classList.add('squished');
   });
 
-  /* ───── 보관함 데이터 ───── */
-  function loadLibrary() {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveLibrary(items) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  }
-
   function updateHomeCount() {
-    const n = loadLibrary().length;
+    const n = Store.load().length;
     $('#home-count').textContent = n > 0 ? String(n) : '';
   }
 
@@ -110,11 +96,11 @@
     const text = $('#generating-text');
     fill.style.width = '0%';
 
-    let step = 0;
+    let stepIdx = 0;
     const ticker = setInterval(() => {
-      step = Math.min(step + 1, GENERATING_MESSAGES.length - 1);
-      text.textContent = GENERATING_MESSAGES[step];
-      fill.style.width = `${Math.min(20 + step * 25, 92)}%`;
+      stepIdx = Math.min(stepIdx + 1, GENERATING_MESSAGES.length - 1);
+      text.textContent = GENERATING_MESSAGES[stepIdx];
+      fill.style.width = `${Math.min(20 + stepIdx * 25, 92)}%`;
     }, 550);
     text.textContent = GENERATING_MESSAGES[0];
     fill.style.width = '20%';
@@ -129,7 +115,7 @@
       fill.style.width = '100%';
 
       state.resultDataUrl = canvas.toDataURL('image/png');
-      state.saved = false;
+      state.savedItemId = null;
       drawResult(canvas);
       setTimeout(() => show('result'), 250);
     } catch (err) {
@@ -141,14 +127,13 @@
 
   function drawResult(sourceCanvas) {
     const target = $('#result-canvas');
-    const ctx = target.getContext('2d');
-    ctx.clearRect(0, 0, target.width, target.height);
-    ctx.drawImage(sourceCanvas, 0, 0, target.width, target.height);
+    const rctx = target.getContext('2d');
+    rctx.clearRect(0, 0, target.width, target.height);
+    rctx.drawImage(sourceCanvas, 0, 0, target.width, target.height);
   }
 
-  /* ───── 결과: 말랑말랑 인터랙션 ───── */
+  /* ───── 결과: 말랑말랑 미리보기 ───── */
   const resultCanvas = $('#result-canvas');
-  let squishTimer = null;
 
   function squish(scaleX, scaleY) {
     resultCanvas.style.transition = 'transform 0.15s ease';
@@ -161,36 +146,42 @@
   });
 
   function release() {
-    clearTimeout(squishTimer);
-    // 통통 튀며 원래대로
     squish(0.9, 1.12);
-    squishTimer = setTimeout(() => squish(1.05, 0.96), 150);
-    squishTimer = setTimeout(() => squish(1, 1), 300);
+    setTimeout(() => squish(1.05, 0.96), 150);
+    setTimeout(() => squish(1, 1), 300);
   }
   resultCanvas.addEventListener('pointerup', release);
   resultCanvas.addEventListener('pointercancel', release);
 
-  /* ───── 결과 저장 ───── */
+  /* ───── 결과 저장 · 놀이터 이동 ───── */
   $('#btn-save').addEventListener('click', () => {
     if (!state.resultDataUrl) return;
-    if (state.saved) {
+    if (state.savedItemId) {
       toast('이미 저장된 말랑이에요!');
       return;
     }
-    const items = loadLibrary();
-    items.unshift({
-      id: `m_${Date.now()}`,
-      image: state.resultDataUrl,
-      style: state.style,
-      createdAt: new Date().toISOString(),
-    });
     try {
-      saveLibrary(items);
-      state.saved = true;
+      const item = Store.add({
+        image: state.resultDataUrl,
+        style: state.style,
+        deco: null,
+      });
+      state.savedItemId = item.id;
       toast('보관함에 저장했어요! 🍡');
     } catch {
       toast('저장 공간이 가득 찼어요. 보관함을 정리해 주세요');
     }
+  });
+
+  $('#btn-play').addEventListener('click', () => {
+    if (!state.resultDataUrl) return;
+    Play.enter({
+      baseDataUrl: state.resultDataUrl,
+      styleKey: state.style,
+      deco: state.savedItemId ? (Store.get(state.savedItemId) || {}).deco : null,
+      itemId: state.savedItemId,
+      returnTo: 'result',
+    });
   });
 
   $('#btn-retry').addEventListener('click', () => show('upload'));
@@ -205,8 +196,21 @@
     return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  // 꾸민 상태까지 합성한 이미지 데이터 URL (썸네일·다운로드용)
+  async function compositeDataUrl(item, size) {
+    const img = await Mallang.loadImage(item.image);
+    if (!Mallang.hasDeco(item.deco)) {
+      if (size >= 640) return item.image;
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      c.getContext('2d').drawImage(img, 0, 0, size, size);
+      return c.toDataURL('image/png');
+    }
+    return Mallang.composeStill(img, item.deco, size).toDataURL('image/png');
+  }
+
   function renderLibrary() {
-    const items = loadLibrary();
+    const items = Store.load();
     const grid = $('#library-grid');
     const empty = $('#library-empty');
     grid.innerHTML = '';
@@ -220,6 +224,13 @@
         <span class="item-label">${styleLabel(item.style)} · ${formatDate(item.createdAt)}</span>`;
       btn.addEventListener('click', () => openDetail(item.id));
       grid.appendChild(btn);
+
+      // 꾸민 말랑이는 합성 썸네일로 교체
+      if (Mallang.hasDeco(item.deco)) {
+        compositeDataUrl(item, 320).then((url) => {
+          btn.querySelector('img').src = url;
+        });
+      }
     });
   }
 
@@ -227,15 +238,18 @@
   const modal = $('#detail-modal');
   let detailId = null;
 
-  function openDetail(id) {
-    const item = loadLibrary().find((i) => i.id === id);
+  async function openDetail(id) {
+    const item = Store.get(id);
     if (!item) return;
     detailId = id;
     $('#detail-img').src = item.image;
     $('#detail-meta').textContent = `${styleLabel(item.style)} 스타일 · ${formatDate(item.createdAt)}`;
-    $('#btn-download').href = item.image;
-    $('#btn-download').download = `mallang-${styleLabel(item.style)}.png`;
     modal.hidden = false;
+
+    const url = await compositeDataUrl(item, 640);
+    $('#detail-img').src = url;
+    $('#btn-download').href = url;
+    $('#btn-download').download = `mallang-${styleLabel(item.style)}.png`;
   }
 
   $('#btn-close-modal').addEventListener('click', () => (modal.hidden = true));
@@ -245,10 +259,23 @@
 
   $('#btn-delete').addEventListener('click', () => {
     if (!detailId) return;
-    saveLibrary(loadLibrary().filter((i) => i.id !== detailId));
+    Store.remove(detailId);
     modal.hidden = true;
     renderLibrary();
     toast('말랑이를 삭제했어요');
+  });
+
+  $('#btn-play-item').addEventListener('click', () => {
+    const item = Store.get(detailId);
+    if (!item) return;
+    modal.hidden = true;
+    Play.enter({
+      baseDataUrl: item.image,
+      styleKey: item.style,
+      deco: item.deco,
+      itemId: item.id,
+      returnTo: 'library',
+    });
   });
 
   /* ───── 토스트 ───── */
@@ -263,4 +290,6 @@
 
   /* ───── 시작 ───── */
   updateHomeCount();
+
+  return { show, toast };
 })();
