@@ -29,7 +29,28 @@ const App = (() => {
     logoBlob.classList.remove('squished');
     void logoBlob.offsetWidth; // 애니메이션 재시작
     logoBlob.classList.add('squished');
+    Sound.boing();
   });
+
+  /* ───── 사운드 ───── */
+  const btnSound = $('#btn-sound');
+  function reflectSound() {
+    btnSound.textContent = Sound.isEnabled() ? '🔊' : '🔇';
+    btnSound.classList.toggle('muted', !Sound.isEnabled());
+  }
+  btnSound.addEventListener('click', () => {
+    Sound.toggle();
+    reflectSound();
+    toast(Sound.isEnabled() ? '소리를 켰어요! 🔊' : '소리를 껐어요 🔇');
+  });
+  reflectSound();
+
+  // 버튼·칩·탭 공통 탭 사운드 (놀이터 캔버스는 자체 사운드 사용)
+  document.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.btn, .btn-back, .style-card, .tab, .chip, .emoji-btn, .action-btn, .library-item')) {
+      Sound.tap();
+    }
+  }, true);
 
   function updateHomeCount() {
     const n = Store.load().length;
@@ -49,6 +70,7 @@ const App = (() => {
     preview.hidden = false;
     placeholder.hidden = true;
     btnGenerate.disabled = false;
+    Sound.pop();
   }
 
   function readFile(file) {
@@ -101,6 +123,7 @@ const App = (() => {
       stepIdx = Math.min(stepIdx + 1, GENERATING_MESSAGES.length - 1);
       text.textContent = GENERATING_MESSAGES[stepIdx];
       fill.style.width = `${Math.min(20 + stepIdx * 25, 92)}%`;
+      Sound.blip();
     }, 550);
     text.textContent = GENERATING_MESSAGES[0];
     fill.style.width = '20%';
@@ -117,6 +140,7 @@ const App = (() => {
       state.resultDataUrl = canvas.toDataURL('image/png');
       state.savedItemId = null;
       drawResult(canvas);
+      Sound.sparkle();
       setTimeout(() => show('result'), 250);
     } catch (err) {
       clearInterval(ticker);
@@ -143,12 +167,14 @@ const App = (() => {
   resultCanvas.addEventListener('pointerdown', (e) => {
     resultCanvas.setPointerCapture(e.pointerId);
     squish(1.15, 0.8);
+    Sound.pop();
   });
 
   function release() {
     squish(0.9, 1.12);
     setTimeout(() => squish(1.05, 0.96), 150);
     setTimeout(() => squish(1, 1), 300);
+    Sound.boing();
   }
   resultCanvas.addEventListener('pointerup', release);
   resultCanvas.addEventListener('pointercancel', release);
@@ -167,6 +193,7 @@ const App = (() => {
         deco: null,
       });
       state.savedItemId = item.id;
+      Sound.ding();
       toast('보관함에 저장했어요! 🍡');
     } catch {
       toast('저장 공간이 가득 찼어요. 보관함을 정리해 주세요');
@@ -262,6 +289,7 @@ const App = (() => {
     Store.remove(detailId);
     modal.hidden = true;
     renderLibrary();
+    Sound.trash();
     toast('말랑이를 삭제했어요');
   });
 

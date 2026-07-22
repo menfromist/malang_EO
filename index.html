@@ -13,6 +13,7 @@
 
   <!-- ═══════════ 홈 화면 ═══════════ -->
   <section id="screen-home" class="screen active">
+    <button class="btn-sound" id="btn-sound" title="소리 켜기/끄기">🔊</button>
     <div class="home-hero">
       <div class="logo-blob" id="logo-blob">
         <div class="blob-face">
@@ -128,7 +129,14 @@
       </div>
 
       <div class="tab-panel" id="panel-touch">
-        <p class="hint center">꾹 누르고, 끌어당기고, 튕겨보세요! 말랑말랑 🫧</p>
+        <p class="hint center">꾹 누르면 납작, 끌면 쭉—, 비비면 조물조물, 휙 던지면 통통! 🫧</p>
+        <div class="action-row">
+          <button class="action-btn" data-action="jiggle">🌊 찰랑찰랑</button>
+          <button class="action-btn" data-action="knead">🤲 주무르기</button>
+          <button class="action-btn" data-action="flatten">🥞 납작펴기</button>
+          <button class="action-btn" data-action="spin">🌀 빙글빙글</button>
+          <button class="action-btn" data-action="throw">🚀 던지기</button>
+        </div>
       </div>
 
       <div class="tab-panel" id="panel-deco" hidden>
@@ -192,6 +200,7 @@
 </div>
 
 <script src="js/store.js"></script>
+<script src="js/sound.js"></script>
 <script src="js/mallang.js"></script>
 <script src="js/gif.js"></script>
 <script src="js/play.js"></script>
