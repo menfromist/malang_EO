@@ -39,6 +39,11 @@ const Play = (() => {
   let dragSticker = null;
   let currentTab = 'touch';
 
+  // 멀티터치 핀치: 두 손가락으로 늘리고 줄이기
+  const pointers = new Map(); // pointerId → 정규화 좌표
+  let pinch = null;           // { d0, a0, size0 }
+  let sizeScale = 1;          // 핀치로 조절되는 말랑이 크기 (손을 떼도 유지)
+
   const rest = () => ({ sx: 1, sy: 1, tx: 0, ty: 0, rot: 0 });
 
   function resetPhys() {
@@ -47,6 +52,9 @@ const Play = (() => {
     target = rest();
     dragging = false;
     grab = null;
+    pointers.clear();
+    pinch = null;
+    sizeScale = 1;
   }
 
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
@@ -102,7 +110,10 @@ const Play = (() => {
     ctx.save();
     ctx.translate(SIZE / 2 + phys.tx * SIZE, SIZE / 2 + phys.ty * SIZE);
     ctx.rotate(phys.rot);
-    ctx.scale(clamp(phys.sx, 0.4, 1.8), clamp(phys.sy, 0.4, 1.8));
+    ctx.scale(
+      clamp(phys.sx * sizeScale, 0.3, 2.2),
+      clamp(phys.sy * sizeScale, 0.3, 2.2)
+    );
     ctx.drawImage(layer, -SIZE / 2, -SIZE / 2);
     ctx.restore();
   }
@@ -145,14 +156,35 @@ const Play = (() => {
     return null;
   }
 
+  function normAngle(a) {
+    return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  }
+
   canvas.addEventListener('pointerdown', (e) => {
     if (!state) return;
-    canvas.setPointerCapture(e.pointerId);
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* 합성 이벤트 등 */ }
     const n = pointerPos(e);
     if (currentTab === 'deco') {
       dragSticker = findSticker(n);
       return;
     }
+    pointers.set(e.pointerId, n);
+
+    // 두 번째 손가락 → 핀치 시작 (늘리기/줄이기)
+    if (pointers.size === 2) {
+      dragging = false;
+      grab = null;
+      const [p1, p2] = [...pointers.values()];
+      pinch = {
+        d0: Math.max(Math.hypot(p2.x - p1.x, p2.y - p1.y), 0.01),
+        a0: Math.atan2(p2.y - p1.y, p2.x - p1.x),
+        size0: sizeScale,
+      };
+      Sound.blip();
+      return;
+    }
+    if (pointers.size > 2) return;
+
     dragging = true;
     grab = n;
     moved = false;
@@ -172,6 +204,25 @@ const Play = (() => {
       dragSticker.y = clamp(n.y, 0.05, 0.95);
       rebuildLayer();
       render();
+      return;
+    }
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, n);
+
+    // 핀치 중: 크기 조절 + 핀치 축 방향으로 젤리처럼 늘어남 + 비틀기 회전
+    if (pinch && pointers.size >= 2) {
+      const [p1, p2] = [...pointers.values()];
+      const d = Math.max(Math.hypot(p2.x - p1.x, p2.y - p1.y), 0.01);
+      const a = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const ratio = d / pinch.d0;
+      sizeScale = clamp(pinch.size0 * ratio, 0.45, 1.8);
+      const stretch = clamp(ratio, 0.7, 1.4);
+      target = {
+        tx: 0, ty: 0,
+        sx: clamp(1 + (stretch - 1) * Math.abs(Math.cos(a)), 0.7, 1.5),
+        sy: clamp(1 + (stretch - 1) * Math.abs(Math.sin(a)), 0.7, 1.5),
+        rot: clamp(normAngle(a - pinch.a0), -0.6, 0.6),
+      };
+      dragging = true; // 핀치 동안엔 강성 스프링으로 손가락을 따라감
       return;
     }
     if (!dragging) return;
@@ -207,10 +258,25 @@ const Play = (() => {
     };
   });
 
-  function releasePointer() {
+  function releasePointer(e) {
     if (dragSticker) {
       dragSticker = null;
       autosave();
+      return;
+    }
+    if (e) pointers.delete(e.pointerId);
+
+    // 핀치 종료: 조절된 크기는 유지하고 통통 튀며 마무리
+    if (pinch) {
+      if (pointers.size < 2) {
+        pinch = null;
+        pointers.clear();
+        dragging = false;
+        target = rest();
+        vel.sx += 1.6;
+        vel.sy -= 1.6;
+        Sound.boing();
+      }
       return;
     }
     if (!dragging) return;
@@ -604,5 +670,5 @@ const Play = (() => {
     vel.sy -= 2.2;
   }
 
-  return { enter, save, exportImage, exportGif, exportVideo, stop };
+  return { enter, save, exportImage, exportGif, exportVideo, stop, getPinchScale: () => sizeScale };
 })();
