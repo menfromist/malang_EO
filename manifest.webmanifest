@@ -1,0 +1,16 @@
+{
+  "name": "말랑 Mallang",
+  "short_name": "말랑",
+  "description": "사진을 귀여운 말랑이 캐릭터로 변환하고, 만지고, 꾸미고, 공유하는 앱",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E882B4",
+  "theme_color": "#E882B4",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

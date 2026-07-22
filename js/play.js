@@ -533,8 +533,17 @@ const Play = (() => {
       const vctx = vc.getContext('2d');
 
       const stream = vc.captureStream(30);
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9' : 'video/webm';
+      // iOS 사파리는 WebM을 지원하지 않으므로 mp4까지 폴백
+      const mime = [
+        'video/webm;codecs=vp9',
+        'video/webm',
+        'video/mp4;codecs=avc1',
+        'video/mp4',
+      ].find((m) => MediaRecorder.isTypeSupported(m));
+      if (!mime) {
+        App.toast('이 기기에서는 영상 저장을 지원하지 않아요');
+        return null;
+      }
       const recorder = new MediaRecorder(stream, { mimeType: mime });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
@@ -555,8 +564,9 @@ const Play = (() => {
       recorder.stop();
       await done;
 
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      await deliver(blob, `mallang-${stamp()}.webm`);
+      const isMp4 = mime.startsWith('video/mp4');
+      const blob = new Blob(chunks, { type: isMp4 ? 'video/mp4' : 'video/webm' });
+      await deliver(blob, `mallang-${stamp()}.${isMp4 ? 'mp4' : 'webm'}`);
       return blob;
     } finally {
       exporting = false;

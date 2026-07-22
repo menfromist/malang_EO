@@ -310,5 +310,12 @@ const App = (() => {
   /* ───── 시작 ───── */
   updateHomeCount();
 
+  // PWA: 홈 화면 앱 경험 (지원 환경에서만, 실패해도 조용히 진행)
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+
   return { show, toast };
 })();
