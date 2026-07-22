@@ -23,15 +23,6 @@ const App = (() => {
     el.addEventListener('click', () => show(el.dataset.nav));
   });
 
-  /* ───── 홈: 마스코트 꾹 누르기 ───── */
-  const logoBlob = $('#logo-blob');
-  logoBlob.addEventListener('pointerdown', () => {
-    logoBlob.classList.remove('squished');
-    void logoBlob.offsetWidth; // 애니메이션 재시작
-    logoBlob.classList.add('squished');
-    Sound.boing();
-  });
-
   /* ───── 사운드 ───── */
   const btnSound = $('#btn-sound');
   function reflectSound() {
@@ -47,7 +38,7 @@ const App = (() => {
 
   // 버튼·칩·탭 공통 탭 사운드 (놀이터 캔버스는 자체 사운드 사용)
   document.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.btn, .btn-back, .style-card, .tab, .chip, .emoji-btn, .action-btn, .library-item')) {
+    if (e.target.closest('.btn, .btn-back, .style-card, .tab, .chip, .emoji-btn, .action-btn, .library-item, .hero-round-sm')) {
       Sound.tap();
     }
   }, true);
