@@ -58,6 +58,9 @@ const Hero = (() => {
     document.getElementById('screen-home').style.backgroundColor = BG[key];
     const label = (Mallang.STYLES[key] && Mallang.STYLES[key].label) || key;
     document.getElementById('hero-style-name').textContent = label;
+    // iOS 상태바(테마) 색을 배경과 동기화
+    const meta = document.getElementById('meta-theme');
+    if (meta) meta.content = BG[key];
   }
 
   function navigate(dir) {
