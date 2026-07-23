@@ -44,6 +44,14 @@ const Play = (() => {
   let pinch = null;           // { d0, a0, size0 }
   let sizeScale = 1;          // 핀치로 조절되는 말랑이 크기 (손을 떼도 유지)
 
+  // 주시(juiciness)·가변 보상: 터치 지점 파티클 + 7번째 뽁마다 큰 버스트
+  let particles = [];
+  let pokeCount = 0;
+
+  // 애니머시: 가만히 두면 숨 쉬고, 가끔 스스로 몸짓 (살아있음 지각 → 애착)
+  let lastInteraction = 0;
+  let nextIdleAct = 0;
+
   const rest = () => ({ sx: 1, sy: 1, tx: 0, ty: 0, rot: 0 });
 
   function resetPhys() {
@@ -55,11 +63,47 @@ const Play = (() => {
     pointers.clear();
     pinch = null;
     sizeScale = 1;
+    particles = [];
+    pokeCount = 0;
+    lastInteraction = performance.now();
+    nextIdleAct = lastInteraction + 5000;
   }
 
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
+  function spawnParticles(nx, ny, count, emojis) {
+    for (let i = 0; i < count; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.8;
+      const sp = 0.25 + Math.random() * 0.5;
+      particles.push({
+        x: nx, y: ny,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 1,
+        emoji: emojis[Math.floor(Math.random() * emojis.length)],
+        size: 0.05 + Math.random() * 0.05,
+      });
+    }
+    if (particles.length > 60) particles = particles.slice(-60);
+  }
+
   function step(dt, now) {
+    // 파티클 물리
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 0.25 * dt;
+      p.life -= dt / 0.9;
+    }
+    particles = particles.filter((p) => p.life > 0);
+
+    // 4초 이상 가만히 두면 6~12초 간격으로 스스로 꼬물거린다
+    if (!dragging && !pinch && now - lastInteraction > 4000 && now > nextIdleAct) {
+      nextIdleAct = now + 6000 + Math.random() * 6000;
+      const act = Math.floor(Math.random() * 3);
+      if (act === 0) { vel.ty -= 1.4; vel.sy += 1.6; }   // 폴짝
+      else if (act === 1) { vel.rot += 1.3; }            // 갸웃
+      else { vel.sx += 1.8; vel.sy -= 1.8; }             // 찰랑
+    }
     // 오래 꾹 누르고 있으면 점점 펴진다 (펼치기)
     if (dragging && !moved) {
       const hold = now - downTime;
@@ -107,15 +151,31 @@ const Play = (() => {
   function render() {
     ctx.clearRect(0, 0, SIZE, SIZE);
     Mallang.drawBackground(ctx, SIZE, state.deco.bg);
+
+    // 쉬고 있을 때는 은은하게 숨을 쉰다 (애니머시)
+    const breath = (!dragging && !pinch) ? Math.sin(lastT / 1000 * 2.1) * 0.012 : 0;
+
     ctx.save();
     ctx.translate(SIZE / 2 + phys.tx * SIZE, SIZE / 2 + phys.ty * SIZE);
     ctx.rotate(phys.rot);
     ctx.scale(
-      clamp(phys.sx * sizeScale, 0.3, 2.2),
-      clamp(phys.sy * sizeScale, 0.3, 2.2)
+      clamp(phys.sx * sizeScale * (1 - breath * 0.6), 0.3, 2.2),
+      clamp(phys.sy * sizeScale * (1 + breath), 0.3, 2.2)
     );
     ctx.drawImage(layer, -SIZE / 2, -SIZE / 2);
     ctx.restore();
+
+    // 파티클
+    if (particles.length) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const p of particles) {
+        ctx.globalAlpha = Math.max(p.life, 0);
+        ctx.font = `${p.size * SIZE}px "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
+        ctx.fillText(p.emoji, p.x * SIZE, p.y * SIZE);
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 
   function loop(t) {
@@ -169,6 +229,7 @@ const Play = (() => {
       return;
     }
     pointers.set(e.pointerId, n);
+    lastInteraction = performance.now();
 
     // 두 번째 손가락 → 핀치 시작 (늘리기/줄이기)
     if (pointers.size === 2) {
@@ -194,6 +255,14 @@ const Play = (() => {
     Sound.pop();
     vel.sx += 3.2;   // 눌리는 순간 납작해지는 임펄스
     vel.sy -= 3.2;
+
+    // 터치 지점 파티클 + 7번째 뽁마다 큰 버스트 (가변 보상)
+    pokeCount++;
+    spawnParticles(n.x, n.y, 2, ['💗', '✨']);
+    if (pokeCount % 7 === 0) {
+      spawnParticles(0.5, 0.42, 10, ['💖', '⭐', '✨', '🎉']);
+      Sound.sparkle();
+    }
   });
 
   canvas.addEventListener('pointermove', (e) => {
@@ -361,7 +430,10 @@ const Play = (() => {
     b.addEventListener('click', () => {
       if (!state || currentTab !== 'touch') return;
       const fn = ACTIONS[b.dataset.action];
-      if (fn) fn();
+      if (fn) {
+        lastInteraction = performance.now();
+        fn();
+      }
     });
   });
 
@@ -491,6 +563,7 @@ const Play = (() => {
       });
       state.itemId = item.id;
       Sound.ding();
+      App.celebrate(document.querySelector('.play-stage'));
       App.toast('보관함에 저장했어요! 🍡');
     } catch {
       App.toast('저장 공간이 가득 찼어요. 보관함을 정리해 주세요');
