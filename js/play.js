@@ -52,6 +52,13 @@ const Play = (() => {
   let lastInteraction = 0;
   let nextIdleAct = 0;
 
+  // 왁뿌: 왁스 코팅을 톡톡 부숴 벗기는 ASMR 놀이
+  let shell = null;           // { cells: [{cx, cy, tint, alive}], cs, total }
+  let lastCrackle = 0;
+  const WAX_PALETTES = [
+    [165, 55], [335, 60], [265, 50], [50, 70], [195, 60], // [hue, sat] 민트/핑크/라벤더/레몬/하늘
+  ];
+
   const rest = () => ({ sx: 1, sy: 1, tx: 0, ty: 0, rot: 0 });
 
   function resetPhys() {
@@ -65,11 +72,96 @@ const Play = (() => {
     sizeScale = 1;
     particles = [];
     pokeCount = 0;
+    shell = null;
     lastInteraction = performance.now();
     nextIdleAct = lastInteraction + 5000;
   }
 
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+  /* ── 왁뿌 (왁스 셸) ── */
+
+  function makeShell() {
+    const GRID = 18;
+    const cs = 1 / GRID;
+    const [hue, sat] = WAX_PALETTES[Math.floor(Math.random() * WAX_PALETTES.length)];
+    const cells = [];
+    for (let gy = 0; gy < GRID; gy++) {
+      for (let gx = 0; gx < GRID; gx++) {
+        const cx = (gx + 0.5) * cs;
+        const cy = (gy + 0.5) * cs;
+        // 말랑이 몸통(중앙 타원) 위에만 코팅
+        const dx = (cx - 0.5) / 0.44;
+        const dy = (cy - 0.5) / 0.42;
+        if (dx * dx + dy * dy > 1) continue;
+        cells.push({
+          cx, cy,
+          alive: true,
+          tint: `hsl(${hue + (Math.random() * 10 - 5)}, ${sat}%, ${80 + Math.random() * 9}%)`,
+        });
+      }
+    }
+    shell = { cells, cs, total: cells.length };
+  }
+
+  function shellRemaining() {
+    return shell ? shell.cells.filter((c) => c.alive).length / shell.total : 0;
+  }
+
+  // 터치 지점 주변 왁스를 깨서 조각을 날린다
+  function crackAt(nx, ny, radius) {
+    if (!shell) return 0;
+    let cracked = 0;
+    for (const c of shell.cells) {
+      if (!c.alive) continue;
+      if (Math.hypot(c.cx - nx, c.cy - ny) < radius) {
+        c.alive = false;
+        cracked++;
+        const a = Math.random() * Math.PI * 2;
+        const sp = 0.3 + Math.random() * 0.6;
+        particles.push({
+          shard: true,
+          color: c.tint,
+          x: c.cx, y: c.cy,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.25,
+          rot: Math.random() * Math.PI,
+          vr: (Math.random() - 0.5) * 10,
+          life: 1,
+          size: shell.cs * (0.7 + Math.random() * 0.5),
+        });
+      }
+    }
+    if (cracked > 0) {
+      const now = performance.now();
+      if (now - lastCrackle > 70) {
+        lastCrackle = now;
+        Sound.crackle();
+      }
+      vel.sx += 0.8;
+      vel.sy -= 0.8;
+      // 거의 다 벗겼으면 나머지도 팡! 하고 클리어
+      if (shellRemaining() < 0.08) {
+        for (const c of shell.cells) {
+          if (!c.alive) continue;
+          c.alive = false;
+          const a2 = Math.random() * Math.PI * 2;
+          const sp2 = 0.5 + Math.random() * 0.6;
+          particles.push({
+            shard: true, color: c.tint,
+            x: c.cx, y: c.cy,
+            vx: Math.cos(a2) * sp2, vy: Math.sin(a2) * sp2 - 0.3,
+            rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 10,
+            life: 1, size: shell.cs,
+          });
+        }
+        shell = null;
+        Sound.sparkle();
+        spawnParticles(0.5, 0.4, 10, ['🎉', '✨', '💖', '⭐']);
+        App.toast('왁뿌 클리어! 말랑이가 나왔어요 🎉');
+      }
+    }
+    return cracked;
+  }
 
   function spawnParticles(nx, ny, count, emojis) {
     for (let i = 0; i < count; i++) {
@@ -83,7 +175,7 @@ const Play = (() => {
         size: 0.05 + Math.random() * 0.05,
       });
     }
-    if (particles.length > 60) particles = particles.slice(-60);
+    if (particles.length > 140) particles = particles.slice(-140);
   }
 
   function step(dt, now) {
@@ -91,7 +183,8 @@ const Play = (() => {
     for (const p of particles) {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vy += 0.25 * dt;
+      p.vy += (p.shard ? 1.4 : 0.25) * dt; // 왁스 조각은 무겁게 떨어진다
+      if (p.vr) p.rot += p.vr * dt;
       p.life -= dt / 0.9;
     }
     particles = particles.filter((p) => p.life > 0);
@@ -163,16 +256,44 @@ const Play = (() => {
       clamp(phys.sy * sizeScale * (1 + breath), 0.3, 2.2)
     );
     ctx.drawImage(layer, -SIZE / 2, -SIZE / 2);
+
+    // 왁스 코팅 (말랑이와 같은 변형 공간에서 함께 움직인다)
+    if (shell) {
+      const cs = shell.cs * SIZE;
+      for (const c of shell.cells) {
+        if (!c.alive) continue;
+        ctx.fillStyle = c.tint;
+        ctx.fillRect((c.cx - shell.cs / 2) * SIZE - SIZE / 2, (c.cy - shell.cs / 2) * SIZE - SIZE / 2, cs - 1, cs - 1);
+      }
+      // 은은한 광택
+      const gl = ctx.createLinearGradient(-SIZE * 0.3, -SIZE * 0.4, SIZE * 0.2, SIZE * 0.3);
+      gl.addColorStop(0, 'rgba(255,255,255,0.35)');
+      gl.addColorStop(0.5, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gl;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, SIZE * 0.44, SIZE * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
 
-    // 파티클
+    // 파티클 (하트·별 이모지 + 왁스 조각)
     if (particles.length) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       for (const p of particles) {
         ctx.globalAlpha = Math.max(p.life, 0);
-        ctx.font = `${p.size * SIZE}px "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
-        ctx.fillText(p.emoji, p.x * SIZE, p.y * SIZE);
+        if (p.shard) {
+          ctx.save();
+          ctx.translate(p.x * SIZE, p.y * SIZE);
+          ctx.rotate(p.rot);
+          ctx.fillStyle = p.color;
+          const s = p.size * SIZE;
+          ctx.fillRect(-s / 2, -s / 2, s, s);
+          ctx.restore();
+        } else {
+          ctx.font = `${p.size * SIZE}px "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
+          ctx.fillText(p.emoji, p.x * SIZE, p.y * SIZE);
+        }
       }
       ctx.globalAlpha = 1;
     }
@@ -256,12 +377,16 @@ const Play = (() => {
     vel.sx += 3.2;   // 눌리는 순간 납작해지는 임펄스
     vel.sy -= 3.2;
 
-    // 터치 지점 파티클 + 7번째 뽁마다 큰 버스트 (가변 보상)
-    pokeCount++;
-    spawnParticles(n.x, n.y, 2, ['💗', '✨']);
-    if (pokeCount % 7 === 0) {
-      spawnParticles(0.5, 0.42, 10, ['💖', '⭐', '✨', '🎉']);
-      Sound.sparkle();
+    // 왁스가 있으면 깨고, 없으면 하트 파티클 + 가변 보상
+    if (shell) {
+      crackAt(n.x, n.y, 0.1 + Math.random() * 0.03);
+    } else {
+      pokeCount++;
+      spawnParticles(n.x, n.y, 2, ['💗', '✨']);
+      if (pokeCount % 7 === 0) {
+        spawnParticles(0.5, 0.42, 10, ['💖', '⭐', '✨', '🎉']);
+        Sound.sparkle();
+      }
     }
   });
 
@@ -295,6 +420,9 @@ const Play = (() => {
       return;
     }
     if (!dragging) return;
+
+    // 왁스 위를 문지르면 지나간 자리가 바삭바삭 벗겨진다
+    if (shell) crackAt(n.x, n.y, 0.075);
 
     const now = performance.now();
     trail.push({ ...n, t: now });
@@ -423,6 +551,14 @@ const Play = (() => {
       vel.tx += dir * (2.6 + Math.random() * 2);
       vel.rot += dir * 5;
       Sound.whoosh();
+    },
+    // 왁뿌: 왁스를 입히고 톡톡 부숴 벗기기
+    wax() {
+      makeShell();
+      Sound.pop();
+      vel.sx += 1.5;
+      vel.sy -= 1.5;
+      App.toast('왁스를 입혔어요! 톡톡 부숴보세요 🍬');
     },
   };
 
@@ -743,5 +879,9 @@ const Play = (() => {
     vel.sy -= 2.2;
   }
 
-  return { enter, save, exportImage, exportGif, exportVideo, stop, getPinchScale: () => sizeScale };
+  return {
+    enter, save, exportImage, exportGif, exportVideo, stop,
+    getPinchScale: () => sizeScale,
+    getShellRemaining: shellRemaining,
+  };
 })();
