@@ -78,9 +78,39 @@ const Sound = (() => {
   }
 
   /* ── 햅틱 진동 (Hoggan & Brewster CHI 2008: 촉각 피드백이 터치 수행 개선) ── */
+
+  // iOS 사파리는 navigator.vibrate 미지원 → iOS 17.4+의
+  // 네이티브 스위치(input[switch]) 토글 햅틱으로 폴백
+  let hapticSwitch = null;
+  function iosTick() {
+    try {
+      if (!hapticSwitch) {
+        const label = document.createElement('label');
+        label.ariaHidden = 'true';
+        label.style.cssText = 'position:fixed;width:0;height:0;overflow:hidden;opacity:0;pointer-events:none;';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.setAttribute('switch', '');
+        label.appendChild(input);
+        document.body.appendChild(label);
+        hapticSwitch = label;
+      }
+      hapticSwitch.click();
+    } catch { /* 미지원 iOS 버전은 조용히 넘어감 */ }
+  }
+
   function buzz(pattern) {
     try {
-      if (navigator.vibrate) navigator.vibrate(pattern);
+      if (navigator.vibrate) {
+        navigator.vibrate(pattern);
+        return;
+      }
+      // 진동 API가 없으면(아이폰) 패턴의 펄스 수만큼 햅틱 틱을 근사
+      const pulses = Array.isArray(pattern) ? Math.ceil(pattern.length / 2) : 1;
+      for (let i = 0; i < Math.min(pulses, 4); i++) {
+        if (i === 0) iosTick();
+        else setTimeout(iosTick, i * 45);
+      }
     } catch { /* 미지원 기기 */ }
   }
 
