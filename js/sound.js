@@ -108,6 +108,23 @@ const Sound = (() => {
   function whoosh() {
     tone({ type: 'sawtooth', from: 180, to: 760, dur: 0.22, gain: 0.04 });
     tone({ type: 'sine', from: 300, to: 900, dur: 0.2, gain: 0.03, delay: 0.02 });
+    buzz(6);
+  }
+
+  // 바삭 — 왁뿌(왁스 깨기): 고음 클릭이 촘촘하게 터지는 크래클
+  function crackle() {
+    const n = 4 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      tone({
+        type: 'square',
+        from: 1600 + Math.random() * 1600,
+        to: 700 + Math.random() * 400,
+        dur: 0.025 + Math.random() * 0.02,
+        gain: 0.045,
+        delay: i * (0.01 + Math.random() * 0.014),
+      });
+    }
+    buzz([5, 12, 4, 10, 5]);
   }
 
   /* ── 켜기/끄기 ── */
@@ -123,5 +140,5 @@ const Sound = (() => {
     return enabled;
   }
 
-  return { tap, pop, boing, blip, sparkle, ding, trash, whoosh, toggle, isEnabled };
+  return { tap, pop, boing, blip, sparkle, ding, trash, whoosh, crackle, toggle, isEnabled };
 })();
