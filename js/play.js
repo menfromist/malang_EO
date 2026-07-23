@@ -59,6 +59,12 @@ const Play = (() => {
     [165, 55], [335, 60], [265, 50], [50, 70], [195, 60], // [hue, sat] 민트/핑크/라벤더/레몬/하늘
   ];
 
+  // 수명: 만질수록 손때가 타고 늘어나다가, 어느 날 터져서 못 쓰게 된다
+  const WEAR = { poke: 0.0012, release: 0.002, throw: 0.005, action: 0.003, pinch: 0.004, wax: 0.012 };
+  let grimeLayer = null;      // 손때 오버레이 (wear 구간마다 재생성)
+  let grimeBucket = -1;
+  let lastWearSave = 0;
+
   const rest = () => ({ sx: 1, sy: 1, tx: 0, ty: 0, rot: 0 });
 
   function resetPhys() {
@@ -73,11 +79,85 @@ const Play = (() => {
     particles = [];
     pokeCount = 0;
     shell = null;
+    grimeLayer = null;
+    grimeBucket = -1;
     lastInteraction = performance.now();
     nextIdleAct = lastInteraction + 5000;
   }
 
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+  /* ── 수명 (손때 → 헐음 → 터짐) ── */
+
+  function buildGrime(w) {
+    const c = document.createElement('canvas');
+    c.width = c.height = SIZE;
+    const g = c.getContext('2d');
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const n = Math.floor(w * 30);
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(rnd());
+      const x = SIZE / 2 + Math.cos(a) * r * SIZE * 0.38;
+      const y = SIZE / 2 + Math.sin(a) * r * SIZE * 0.36;
+      g.fillStyle = `rgba(55,42,48,${(0.04 + rnd() * 0.1 * w).toFixed(3)})`;
+      g.beginPath();
+      g.ellipse(x, y, SIZE * (0.02 + rnd() * 0.05), SIZE * (0.015 + rnd() * 0.04), rnd() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    if (w > 0.85) {
+      // 구멍이 나려는 조짐
+      g.fillStyle = 'rgba(40,30,35,0.55)';
+      g.beginPath();
+      g.ellipse(SIZE * 0.64, SIZE * 0.66, SIZE * 0.035, SIZE * 0.025, 0.4, 0, Math.PI * 2);
+      g.fill();
+    }
+    return c;
+  }
+
+  function updateBadge() {
+    const el = document.getElementById('wear-badge');
+    if (!el || !state) return;
+    const w = state.wear;
+    el.textContent = state.dead ? '💔'
+      : w < 0.33 ? '❤️❤️❤️'
+      : w < 0.6 ? '❤️❤️🤍'
+      : w < 0.85 ? '❤️🤍🤍'
+      : '🩹';
+  }
+
+  function persistWear(force) {
+    if (!state.itemId) return;
+    const now = performance.now();
+    if (!force && now - lastWearSave < 1500) return;
+    lastWearSave = now;
+    Store.update(state.itemId, { wear: state.wear, dead: state.dead });
+  }
+
+  function burstNow() {
+    state.dead = true;
+    shell = null;
+    Sound.burst();
+    spawnParticles(0.5, 0.45, 14, ['☁️', '💨', '🤍']);
+    Object.assign(vel, { sx: 0, sy: 0, tx: 0, ty: 0, rot: 0 });
+    target = rest();
+    updateBadge();
+    persistWear(true);
+    App.toast('앗! 말랑이가 터져버렸어요… 💔');
+    setTimeout(() => App.toast('그동안 많이 아껴줬어요. 보관함에서 보내줄 수 있어요 🕊️'), 2600);
+  }
+
+  function addWear(amount) {
+    if (!state || state.dead) return;
+    state.wear = Math.min(1, state.wear + amount);
+    if (state.wear >= 1) {
+      burstNow();
+      return;
+    }
+    updateBadge();
+    persistWear(false);
+  }
 
   /* ── 왁뿌 (왁스 셸) ── */
 
@@ -161,6 +241,7 @@ const Play = (() => {
         Sound.sparkle();
         spawnParticles(0.5, 0.4, 10, ['🎉', '✨', '💖', '⭐']);
         App.toast('왁뿌 클리어! 말랑이가 나왔어요 🎉');
+        addWear(WEAR.wax); // 왁스를 벗길 때마다 표면이 조금씩 상한다
       }
     }
     return cracked;
@@ -192,8 +273,8 @@ const Play = (() => {
     }
     particles = particles.filter((p) => p.life > 0);
 
-    // 4초 이상 가만히 두면 6~12초 간격으로 스스로 꼬물거린다
-    if (!dragging && !pinch && now - lastInteraction > 4000 && now > nextIdleAct) {
+    // 4초 이상 가만히 두면 6~12초 간격으로 스스로 꼬물거린다 (터졌으면 못 움직인다)
+    if (!dragging && !pinch && !(state && state.dead) && now - lastInteraction > 4000 && now > nextIdleAct) {
       nextIdleAct = now + 6000 + Math.random() * 6000;
       const act = Math.floor(Math.random() * 3);
       if (act === 0) { vel.ty -= 1.4; vel.sy += 1.6; }   // 폴짝
@@ -248,17 +329,49 @@ const Play = (() => {
     ctx.clearRect(0, 0, SIZE, SIZE);
     Mallang.drawBackground(ctx, SIZE, state.deco.bg);
 
+    const w = state.wear;
+
+    // 손때 오버레이는 wear 구간이 바뀔 때만 재생성
+    const bucket = Math.floor(w * 12);
+    if (bucket !== grimeBucket) {
+      grimeBucket = bucket;
+      grimeLayer = w > 0.12 ? buildGrime(w) : null;
+    }
+
+    // 터진 말랑이: 납작하게 퍼져서 움직이지 않는다
+    if (state.dead) {
+      ctx.save();
+      ctx.translate(SIZE / 2, SIZE / 2 + SIZE * 0.18);
+      ctx.scale(1.35, 0.32);
+      ctx.filter = 'grayscale(0.55) brightness(0.92)';
+      ctx.drawImage(layer, -SIZE / 2, -SIZE / 2);
+      ctx.filter = 'none';
+      if (grimeLayer) ctx.drawImage(grimeLayer, -SIZE / 2, -SIZE / 2);
+      ctx.restore();
+      ctx.font = `${SIZE * 0.09}px "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🩹', SIZE * 0.63, SIZE * 0.6);
+      drawParticles();
+      return;
+    }
+
     // 쉬고 있을 때는 은은하게 숨을 쉰다 (애니머시)
     const breath = (!dragging && !pinch) ? Math.sin(lastT / 1000 * 2.1) * 0.012 : 0;
 
     ctx.save();
-    ctx.translate(SIZE / 2 + phys.tx * SIZE, SIZE / 2 + phys.ty * SIZE);
+    // 낡을수록 아래로 처지고 옆으로 늘어난다
+    ctx.translate(SIZE / 2 + phys.tx * SIZE, SIZE / 2 + phys.ty * SIZE + w * SIZE * 0.03);
     ctx.rotate(phys.rot);
     ctx.scale(
-      clamp(phys.sx * sizeScale * (1 - breath * 0.6), 0.3, 2.2),
-      clamp(phys.sy * sizeScale * (1 + breath), 0.3, 2.2)
+      clamp(phys.sx * sizeScale * (1 - breath * 0.6) * (1 + w * 0.05), 0.3, 2.2),
+      clamp(phys.sy * sizeScale * (1 + breath) * (1 + w * 0.03), 0.3, 2.2)
     );
+    // 낡을수록 색이 바래고 어두워진다
+    if (w > 0.1) ctx.filter = `saturate(${(1 - w * 0.35).toFixed(2)}) brightness(${(1 - w * 0.1).toFixed(2)})`;
     ctx.drawImage(layer, -SIZE / 2, -SIZE / 2);
+    ctx.filter = 'none';
+    if (grimeLayer) ctx.drawImage(grimeLayer, -SIZE / 2, -SIZE / 2);
 
     // 왁스 코팅 (말랑이와 같은 변형 공간에서 함께 움직인다)
     if (shell) {
@@ -279,27 +392,30 @@ const Play = (() => {
     }
     ctx.restore();
 
-    // 파티클 (하트·별 이모지 + 왁스 조각)
-    if (particles.length) {
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      for (const p of particles) {
-        ctx.globalAlpha = Math.max(p.life, 0);
-        if (p.shard) {
-          ctx.save();
-          ctx.translate(p.x * SIZE, p.y * SIZE);
-          ctx.rotate(p.rot);
-          ctx.fillStyle = p.color;
-          const s = p.size * SIZE;
-          ctx.fillRect(-s / 2, -s / 2, s, s);
-          ctx.restore();
-        } else {
-          ctx.font = `${p.size * SIZE}px "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
-          ctx.fillText(p.emoji, p.x * SIZE, p.y * SIZE);
-        }
+    drawParticles();
+  }
+
+  // 파티클 (하트·별 이모지 + 왁스 조각)
+  function drawParticles() {
+    if (!particles.length) return;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(p.life, 0);
+      if (p.shard) {
+        ctx.save();
+        ctx.translate(p.x * SIZE, p.y * SIZE);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        const s = p.size * SIZE;
+        ctx.fillRect(-s / 2, -s / 2, s, s);
+        ctx.restore();
+      } else {
+        ctx.font = `${p.size * SIZE}px "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
+        ctx.fillText(p.emoji, p.x * SIZE, p.y * SIZE);
       }
-      ctx.globalAlpha = 1;
     }
+    ctx.globalAlpha = 1;
   }
 
   function loop(t) {
@@ -352,6 +468,13 @@ const Play = (() => {
       dragSticker = findSticker(n);
       return;
     }
+    // 터진 말랑이는 힘없이 퍽… 소리만 난다
+    if (state.dead) {
+      Sound.thud();
+      spawnParticles(n.x, n.y, 1, ['💨']);
+      return;
+    }
+
     pointers.set(e.pointerId, n);
     lastInteraction = performance.now();
 
@@ -380,9 +503,11 @@ const Play = (() => {
     vel.sx += 3.2;   // 눌리는 순간 납작해지는 임펄스
     vel.sy -= 3.2;
 
+    addWear(WEAR.poke);
+
     // 왁스가 있으면 깨고, 빈 곳(또는 왁스 없음)이면 하트 파티클 + 가변 보상
     const crackedNow = shell ? crackAt(n.x, n.y, 0.1 + Math.random() * 0.03) : 0;
-    if (crackedNow === 0) {
+    if (crackedNow === 0 && !state.dead) {
       pokeCount++;
       spawnParticles(n.x, n.y, 2, ['💗', '✨']);
       if (pokeCount % 7 === 0) {
@@ -475,6 +600,7 @@ const Play = (() => {
         vel.sx += 1.6;
         vel.sy -= 1.6;
         Sound.boing();
+        addWear(WEAR.pinch); // 늘렸다 줄였다 하면 더 빨리 헐거워진다
       }
       return;
     }
@@ -496,10 +622,12 @@ const Play = (() => {
         vel.ty += clamp(vy * 0.55, -6, 6);
         vel.rot += clamp(vx * 1.2, -7, 7);
         Sound.whoosh();
+        addWear(WEAR.throw);
         return;
       }
     }
     Sound.boing();
+    addWear(WEAR.release);
   }
   canvas.addEventListener('pointerup', releasePointer);
   canvas.addEventListener('pointercancel', releasePointer);
@@ -556,6 +684,7 @@ const Play = (() => {
     },
     // 왁뿌: 왁스를 입히고 톡톡 부숴 벗기기
     wax() {
+      if (shell) return; // 이미 코팅돼 있으면 무시
       makeShell();
       Sound.pop();
       vel.sx += 1.5;
@@ -567,10 +696,16 @@ const Play = (() => {
   document.querySelectorAll('.action-btn').forEach((b) => {
     b.addEventListener('click', () => {
       if (!state || currentTab !== 'touch') return;
+      if (state.dead) {
+        Sound.thud();
+        App.toast('터진 말랑이는 이제 움직일 수 없어요 💔');
+        return;
+      }
       const fn = ACTIONS[b.dataset.action];
       if (fn) {
         lastInteraction = performance.now();
-        fn();
+        addWear(b.dataset.action === 'throw' ? WEAR.throw : WEAR.action);
+        if (!state.dead) fn();
       }
     });
   });
@@ -688,7 +823,7 @@ const Play = (() => {
 
   function save() {
     if (state.itemId) {
-      Store.update(state.itemId, { deco: state.deco });
+      Store.update(state.itemId, { deco: state.deco, wear: state.wear, dead: state.dead });
       Sound.ding();
       App.toast('꾸민 모습을 저장했어요! 🎀');
       return;
@@ -698,6 +833,8 @@ const Play = (() => {
         image: state.baseDataUrl,
         style: state.styleKey,
         deco: state.deco,
+        wear: state.wear,
+        dead: state.dead,
       });
       state.itemId = item.id;
       Sound.ding();
@@ -710,6 +847,7 @@ const Play = (() => {
 
   document.getElementById('btn-play-save').addEventListener('click', save);
   document.getElementById('btn-play-back').addEventListener('click', () => {
+    if (state) persistWear(true);
     stop();
     App.show(state && state.returnTo ? state.returnTo : 'home');
   });
@@ -868,22 +1006,29 @@ const Play = (() => {
       deco: Mallang.normalizeDeco(opts.deco),
       itemId: opts.itemId || null,
       returnTo: opts.returnTo || 'home',
+      wear: Math.min(Math.max(opts.wear || 0, 0), 1),
+      dead: !!opts.dead,
     };
     rebuildLayer();
     buildPanels();
     resetPhys();
     switchTab('touch');
+    updateBadge();
     App.show('play');
     start();
 
-    // 등장 인사: 통통!
-    vel.sx += 2.2;
-    vel.sy -= 2.2;
+    // 등장 인사: 통통! (터진 말랑이는 조용히 누워 있는다)
+    if (!state.dead) {
+      vel.sx += 2.2;
+      vel.sy -= 2.2;
+    }
   }
 
   return {
     enter, save, exportImage, exportGif, exportVideo, stop,
     getPinchScale: () => sizeScale,
     getShellRemaining: shellRemaining,
+    getWear: () => (state ? { wear: state.wear, dead: state.dead } : null),
+    _addWear: addWear, // 테스트용
   };
 })();
