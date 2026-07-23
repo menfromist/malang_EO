@@ -197,10 +197,13 @@ const App = (() => {
 
   $('#btn-play').addEventListener('click', () => {
     if (!state.resultDataUrl) return;
+    const saved = state.savedItemId ? Store.get(state.savedItemId) : null;
     Play.enter({
       baseDataUrl: state.resultDataUrl,
       styleKey: state.style,
-      deco: state.savedItemId ? (Store.get(state.savedItemId) || {}).deco : null,
+      deco: saved ? saved.deco : null,
+      wear: saved ? saved.wear : 0,
+      dead: saved ? saved.dead : false,
       itemId: state.savedItemId,
       returnTo: 'result',
     });
@@ -242,8 +245,8 @@ const App = (() => {
       const btn = document.createElement('button');
       btn.className = 'library-item';
       btn.innerHTML = `
-        <img src="${item.image}" alt="${styleLabel(item.style)} 말랑이">
-        <span class="item-label">${styleLabel(item.style)} · ${formatDate(item.createdAt)}</span>`;
+        <img src="${item.image}" alt="${styleLabel(item.style)} 말랑이"${item.dead ? ' style="filter:grayscale(0.6) brightness(0.92)"' : ''}>
+        <span class="item-label">${item.dead ? '💔 ' : ''}${styleLabel(item.style)} · ${formatDate(item.createdAt)}</span>`;
       btn.addEventListener('click', () => openDetail(item.id));
       grid.appendChild(btn);
 
@@ -265,7 +268,10 @@ const App = (() => {
     if (!item) return;
     detailId = id;
     $('#detail-img').src = item.image;
-    $('#detail-meta').textContent = `${styleLabel(item.style)} 스타일 · ${formatDate(item.createdAt)}`;
+    $('#detail-img').style.filter = item.dead ? 'grayscale(0.6) brightness(0.92)' : '';
+    $('#detail-meta').textContent = item.dead
+      ? `${styleLabel(item.style)} 스타일 · 💔 터진 말랑이 — 이제 보내줄 시간이에요`
+      : `${styleLabel(item.style)} 스타일 · ${formatDate(item.createdAt)}`;
     modal.hidden = false;
 
     const url = await compositeDataUrl(item, 640);
@@ -296,6 +302,8 @@ const App = (() => {
       baseDataUrl: item.image,
       styleKey: item.style,
       deco: item.deco,
+      wear: item.wear || 0,
+      dead: !!item.dead,
       itemId: item.id,
       returnTo: 'library',
     });

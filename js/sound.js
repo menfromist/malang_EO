@@ -224,6 +224,22 @@ const Sound = (() => {
     buzz(k > 1.2 ? [6, 10, 5, 10, 6, 12, 8] : [5, 12, 4, 10, 5]);
   }
 
+  // 펑! — 말랑이가 터질 때 (깊은 폭발 + 바람 빠지는 소리)
+  function burst() {
+    tone({ type: 'sine', from: 150, to: 35, dur: 0.35, gain: 0.22 });
+    noiseBurst({ type: 'lowpass', freq: 500, q: 0.8, dur: 0.25, gain: 0.25 });
+    noiseBurst({ type: 'bandpass', freq: 2500, q: 2, dur: 0.08, gain: 0.12 });
+    noiseBurst({ type: 'bandpass', freq: 1200, q: 1.2, dur: 0.5, gain: 0.06, delay: 0.12 });
+    buzz([30, 40, 15, 40, 60]);
+  }
+
+  // 퍽 — 터진 말랑이를 눌렀을 때의 힘없는 소리
+  function thud() {
+    tone({ type: 'sine', from: 120, to: 60, dur: 0.09, gain: 0.07 });
+    noiseBurst({ type: 'lowpass', freq: 200, q: 1, dur: 0.05, gain: 0.06 });
+    buzz(5);
+  }
+
   /* ── 켜기/끄기 ── */
 
   function toggle() {
@@ -237,5 +253,5 @@ const Sound = (() => {
     return enabled;
   }
 
-  return { tap, pop, boing, blip, sparkle, ding, trash, whoosh, crackle, toggle, isEnabled };
+  return { tap, pop, boing, blip, sparkle, ding, trash, whoosh, crackle, burst, thud, toggle, isEnabled };
 })();
