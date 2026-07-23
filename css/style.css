@@ -571,8 +571,26 @@ body {
 .hero-cta:active { transform: translateY(4px); box-shadow: inset 3px 3px 0 rgba(0, 0, 0, 0.25); background: var(--mc-green-dark); }
 .hero-cta-arrow { width: 20px; height: 20px; }
 
+/* 하단 크레딧 */
+.hero-credit {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  font-family: var(--font-pixel);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: none;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}
+.hero-credit:hover { color: #fff; }
+
 @media (min-width: 640px) {
   .hero-brand { left: 32px; }
+  .hero-credit { bottom: 14px; font-size: 0.8rem; }
   .hero-copy { bottom: 80px; left: 96px; }
   .hero-title { font-size: 22px; margin-bottom: 12px; }
   .hero-desc { display: block; }
