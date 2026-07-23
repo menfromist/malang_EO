@@ -133,9 +133,10 @@ const Play = (() => {
     }
     if (cracked > 0) {
       const now = performance.now();
-      if (now - lastCrackle > 70) {
+      if (now - lastCrackle > 50) {
         lastCrackle = now;
-        Sound.crackle();
+        // 많이 부서질수록 크고 묵직한 크래클
+        Sound.crackle(Math.min(0.5 + cracked / 5, 2));
       }
       vel.sx += 0.8;
       vel.sy -= 0.8;

@@ -8,15 +8,55 @@ const Sound = (() => {
   let enabled = localStorage.getItem(KEY) !== 'off';
   let ctx = null;
 
+  let master = null;      // 컴프레서 → 출력 (여러 소리가 겹쳐도 깨지지 않게)
+  let noiseBuf = null;    // 크래클·질감용 화이트 노이즈 버퍼
+
   function ac() {
     if (!enabled) return null;
     try {
-      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -18;
+        comp.knee.value = 20;
+        comp.ratio.value = 6;
+        comp.attack.value = 0.002;
+        comp.release.value = 0.12;
+        comp.connect(ctx.destination);
+        master = comp;
+
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+        const data = noiseBuf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      }
       if (ctx.state === 'suspended') ctx.resume();
       return ctx;
     } catch {
       return null; // 오디오 미지원 환경은 조용히 넘어감
     }
+  }
+
+  // 필터 걸린 노이즈 조각 — 바삭·툽·솨 같은 '물성' 소리의 재료
+  function noiseBurst({ freq = 2000, q = 6, dur = 0.02, gain = 0.08, delay = 0, type = 'bandpass' }) {
+    const c = ac();
+    if (!c) return;
+    const t = c.currentTime + delay;
+    const src = c.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    src.loopStart = Math.random() * 0.5;
+    src.loopEnd = src.loopStart + 0.5;
+    const f = c.createBiquadFilter();
+    f.type = type;
+    f.frequency.setValueAtTime(freq, t);
+    f.Q.value = q;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.0015); // 급격한 어택 = 깨지는 질감
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(master);
+    src.start(t, src.loopStart);
+    src.stop(t + dur + 0.03);
   }
 
   // 기본 톤: 주파수 램프 + 짧은 엔벨로프
@@ -32,7 +72,7 @@ const Sound = (() => {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(g).connect(c.destination);
+    osc.connect(g).connect(master);
     osc.start(t);
     osc.stop(t + dur + 0.05);
   }
@@ -52,9 +92,10 @@ const Sound = (() => {
     buzz(4);
   }
 
-  // 뽁 — 누르기, 스티커 붙이기, 사진 업로드
+  // 뽁 — 누르기, 스티커 붙이기, 사진 업로드 (사인 드롭 + 부드러운 '툽' 노이즈)
   function pop() {
-    tone({ type: 'sine', from: 420, to: 140, dur: 0.1, gain: 0.12 });
+    tone({ type: 'sine', from: 420, to: 140, dur: 0.1, gain: 0.11 });
+    noiseBurst({ type: 'lowpass', freq: 320, q: 1, dur: 0.06, gain: 0.1 });
     buzz(10);
   }
 
@@ -104,27 +145,53 @@ const Sound = (() => {
     tone({ type: 'sawtooth', from: 420, to: 120, dur: 0.18, gain: 0.045 });
   }
 
-  // 휙 — 던지기·빙글빙글
+  // 휙 — 던지기·빙글빙글 (공기 가르는 노이즈 스윕)
   function whoosh() {
-    tone({ type: 'sawtooth', from: 180, to: 760, dur: 0.22, gain: 0.04 });
-    tone({ type: 'sine', from: 300, to: 900, dur: 0.2, gain: 0.03, delay: 0.02 });
+    const c = ac();
+    if (c) {
+      const t = c.currentTime;
+      const src = c.createBufferSource();
+      src.buffer = noiseBuf;
+      src.loop = true;
+      const f = c.createBiquadFilter();
+      f.type = 'bandpass';
+      f.Q.value = 1.6;
+      f.frequency.setValueAtTime(350, t);
+      f.frequency.exponentialRampToValueAtTime(2600, t + 0.2);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.09, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+      src.connect(f).connect(g).connect(master);
+      src.start(t);
+      src.stop(t + 0.3);
+    }
     buzz(6);
   }
 
-  // 바삭 — 왁뿌(왁스 깨기): 고음 클릭이 촘촘하게 터지는 크래클
-  function crackle() {
-    const n = 4 + Math.floor(Math.random() * 3);
+  // 바삭 — 왁뿌(왁스 깨기): 노이즈 파편이 겹치는 ASMR 크래클
+  // intensity 0.5(문지르기)~2(크게 부서짐)에 따라 밀도·크기가 변한다
+  function crackle(intensity = 1) {
+    const k = Math.max(0.4, Math.min(intensity, 2));
+    // 고음 '바삭' 파편들 — 매번 다른 주파수·간격이라 유기적으로 들린다
+    const n = Math.round(5 + k * 5 + Math.random() * 3);
+    let at = 0;
     for (let i = 0; i < n; i++) {
-      tone({
-        type: 'square',
-        from: 1600 + Math.random() * 1600,
-        to: 700 + Math.random() * 400,
-        dur: 0.025 + Math.random() * 0.02,
-        gain: 0.045,
-        delay: i * (0.01 + Math.random() * 0.014),
+      noiseBurst({
+        freq: 1800 * Math.pow(2, Math.random() * 1.6), // 1.8k~5.5kHz 로그 분포
+        q: 5 + Math.random() * 7,
+        dur: 0.008 + Math.random() * 0.02,
+        gain: (0.06 + Math.random() * 0.08) * k,
+        delay: at,
       });
+      at += 0.004 + Math.random() * 0.02;
     }
-    buzz([5, 12, 4, 10, 5]);
+    // 저음 '우직' 바디 — 부서지는 무게감
+    noiseBurst({ freq: 420 + Math.random() * 380, q: 2.5, dur: 0.05 + 0.03 * k, gain: 0.09 * k });
+    if (k > 1.2) {
+      noiseBurst({ freq: 240, q: 1.5, dur: 0.09, gain: 0.08, delay: 0.015 });
+    }
+    buzz(k > 1.2 ? [6, 10, 5, 10, 6, 12, 8] : [5, 12, 4, 10, 5]);
   }
 
   /* ── 켜기/끄기 ── */
