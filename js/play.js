@@ -141,7 +141,9 @@ const Play = (() => {
       vel.sx += 0.8;
       vel.sy -= 0.8;
       // 거의 다 벗겼으면 나머지도 팡! 하고 클리어
-      if (shellRemaining() < 0.08) {
+      // (문지르기가 놓친 가장자리 조각 때문에 끝나지 않는 일이 없도록 넉넉하게)
+      const alive = shell.cells.filter((c) => c.alive).length;
+      if (alive / shell.total < 0.15 || alive <= 12) {
         for (const c of shell.cells) {
           if (!c.alive) continue;
           c.alive = false;
@@ -378,10 +380,9 @@ const Play = (() => {
     vel.sx += 3.2;   // 눌리는 순간 납작해지는 임펄스
     vel.sy -= 3.2;
 
-    // 왁스가 있으면 깨고, 없으면 하트 파티클 + 가변 보상
-    if (shell) {
-      crackAt(n.x, n.y, 0.1 + Math.random() * 0.03);
-    } else {
+    // 왁스가 있으면 깨고, 빈 곳(또는 왁스 없음)이면 하트 파티클 + 가변 보상
+    const crackedNow = shell ? crackAt(n.x, n.y, 0.1 + Math.random() * 0.03) : 0;
+    if (crackedNow === 0) {
       pokeCount++;
       spawnParticles(n.x, n.y, 2, ['💗', '✨']);
       if (pokeCount % 7 === 0) {
