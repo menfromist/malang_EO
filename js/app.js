@@ -132,7 +132,10 @@ const App = (() => {
       state.savedItemId = null;
       drawResult(canvas);
       Sound.sparkle();
-      setTimeout(() => show('result'), 250);
+      setTimeout(() => {
+        show('result');
+        celebrate($('.result-stage'));
+      }, 250);
     } catch (err) {
       clearInterval(ticker);
       toast(err.message || '생성에 실패했어요. 다시 시도해 주세요');
@@ -185,6 +188,7 @@ const App = (() => {
       });
       state.savedItemId = item.id;
       Sound.ding();
+      celebrate($('.result-stage'));
       toast('보관함에 저장했어요! 🍡');
     } catch {
       toast('저장 공간이 가득 찼어요. 보관함을 정리해 주세요');
@@ -297,6 +301,23 @@ const App = (() => {
     });
   });
 
+  /* ───── 축하 파티클 (성취 순간의 주시 피드백) ───── */
+  function celebrate(target, emojis = ['✨', '⭐', '💖', '🎉', '🫧']) {
+    if (!target) return;
+    for (let i = 0; i < 12; i++) {
+      const s = document.createElement('span');
+      s.className = 'burst-particle';
+      s.textContent = emojis[i % emojis.length];
+      const a = Math.random() * Math.PI * 2;
+      const d = 60 + Math.random() * 90;
+      s.style.setProperty('--dx', `${Math.cos(a) * d}px`);
+      s.style.setProperty('--dy', `${Math.sin(a) * d - 40}px`);
+      s.style.animationDelay = `${Math.random() * 0.12}s`;
+      target.appendChild(s);
+      setTimeout(() => s.remove(), 1400);
+    }
+  }
+
   /* ───── 토스트 ───── */
   let toastTimer = null;
   function toast(message) {
@@ -317,5 +338,5 @@ const App = (() => {
     });
   }
 
-  return { show, toast };
+  return { show, toast, celebrate };
 })();

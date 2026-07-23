@@ -37,16 +37,25 @@ const Sound = (() => {
     osc.stop(t + dur + 0.05);
   }
 
-  /* ── 효과음 카탈로그 ── */
+  /* ── 햅틱 진동 (Hoggan & Brewster CHI 2008: 촉각 피드백이 터치 수행 개선) ── */
+  function buzz(pattern) {
+    try {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    } catch { /* 미지원 기기 */ }
+  }
+
+  /* ── 효과음 카탈로그 (소리 + 진동을 짝지어 다감각 피드백) ── */
 
   // 버튼·칩 탭
   function tap() {
     tone({ type: 'triangle', from: 660, to: 520, dur: 0.05, gain: 0.05 });
+    buzz(4);
   }
 
   // 뽁 — 누르기, 스티커 붙이기, 사진 업로드
   function pop() {
     tone({ type: 'sine', from: 420, to: 140, dur: 0.1, gain: 0.12 });
+    buzz(10);
   }
 
   // 통통 — 말랑이가 튕겨 돌아올 때
@@ -67,6 +76,7 @@ const Sound = (() => {
     osc.connect(g).connect(c.destination);
     osc.start(t);
     osc.stop(t + 0.35);
+    buzz([12, 40, 8]);
   }
 
   // 몽글 — 생성 진행 단계마다
@@ -79,12 +89,14 @@ const Sound = (() => {
     [523, 659, 784, 1047].forEach((f, i) => {
       tone({ type: 'triangle', from: f, dur: 0.2, gain: 0.07, delay: i * 0.07 });
     });
+    buzz([8, 40, 8, 40, 14]);
   }
 
   // 딩 — 저장 완료
   function ding() {
     tone({ type: 'sine', from: 880, dur: 0.32, gain: 0.09 });
     tone({ type: 'sine', from: 1320, dur: 0.26, gain: 0.04, delay: 0.02 });
+    buzz([8, 30, 12]);
   }
 
   // 슉 — 삭제·비우기
